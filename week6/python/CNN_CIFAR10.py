@@ -8,7 +8,7 @@ from keras.layers import Conv2D, MaxPooling2D
 
 batch_size = 32
 num_classes = 10
-epochs = 200
+epochs = 70
 data_augmentation = True
 
 # The data, shuffled and split between train and test sets:
