@@ -24,3 +24,6 @@ https://taehwanptl.github.io/
 
 CSE 599 D1: Advanced Natural Language Processing
 http://courses.cs.washington.edu/courses/cse599d1/16sp/syllabus.html
+
+
+SURVEYS: https://github.com/metrofun/machine-learning-surveys 
