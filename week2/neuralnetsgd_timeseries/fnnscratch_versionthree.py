@@ -22,12 +22,12 @@ import time
  
 class Network:
 
-	def __init__(self, Topo, Train, Test, MaxTime, Samples, MinPer, learnRate, use_stocasticGD, use_vanillalearning, use_nestmomen, momentum_rate): 
+	def __init__(self, Topo, Train, Test, MaxTime,  MinPer, learnRate, use_stocasticGD, use_vanillalearning,  momentum_rate): 
 		self.Top  = Topo  # NN topology [input, hidden, output]
 		self.Max = MaxTime # max epocs
 		self.TrainData = Train
 		self.TestData = Test
-		self.NumSamples = Samples
+		self.NumSamples = Train.shape[0]
 
 		self.learn_rate  = learnRate
  
@@ -52,8 +52,7 @@ class Network:
 		self.hid_delta = np.zeros(self.Top[1] ) # output of first hidden layer
 		self.out_delta = np.zeros(self.Top[2]) #  output last layer
 
-		self.vanilla = use_vanillalearning
-		self.useNesterovMomen = use_nestmomen
+		self.vanilla = use_vanillalearning  # canonical batch training mode - use full data set - no SGD  
 
 		self.momenRate = momentum_rate
 
@@ -83,13 +82,12 @@ class Network:
 		z2 = self.hidout.dot(self.W2)  - self.B2 
 		self.out = self.sigmoid(z2)  # output second hidden layer
 
- 
-
 
 
 	def BackwardPass(self, input_vec, desired):   
 		out_delta =   (desired - self.out)*(self.out*(1-self.out))  
-		hid_delta = out_delta.dot(self.W2.T) * (self.hidout * (1-self.hidout)) #https://www.tutorialspoint.com/numpy/numpy_dot.htm  https://www.geeksforgeeks.org/numpy-dot-python/
+		hid_delta = out_delta.dot(self.W2.T) * (self.hidout * (1-self.hidout)) 
+		#https://www.tutorialspoint.com/numpy/numpy_dot.htm  https://www.geeksforgeeks.org/numpy-dot-python/
   
 		if self.vanilla == True: #no momentum 
 			self.W2+= self.hidout.T.dot(out_delta) * self.learn_rate
@@ -97,36 +95,24 @@ class Network:
 
 			self.W1 += (input_vec.T.dot(hid_delta) * self.learn_rate) 
 			self.B1+=  (-1 * self.learn_rate * hid_delta) 
-		else:
-			v2 = self.W2 #save previous weights http://cs231n.github.io/neural-networks-3/#sgd
-			v1 = self.W1 
-			b2 = self.B2
-			b1 = self.B1 
+		else: # use momentum
+			v2 = self.W2.copy() #save previous weights http://cs231n.github.io/neural-networks-3/#sgd
+			v1 = self.W1.copy()
+			b2 = self.B2.copy()
+			b1 = self.B1.copy()
 
-			v2 = ( v2 *self.momenRate) + (self.hidout.T.dot(out_delta) * self.learn_rate)       # velocity update
-			v1 = ( v1 *self.momenRate) + (input_vec.T.dot(hid_delta) * self.learn_rate)   
-			v2 = ( v2 *self.momenRate) + (-1 * self.learn_rate * out_delta)       # velocity update
-			v1 = ( v1 *self.momenRate) + (-1 * self.learn_rate * hid_delta)   
-
-			if self.useNesterovMomen == False: # use classical momentumm
-				self.W2+= v2
-				self.W1 += v1 
-				self.B2+= b2
-				self.B1 += b1 
-
-			else: # useNesterovMomen http://cs231n.github.io/neural-networks-3/#sgd
-				v2_prev = v2
-				v1_prev = v1 
-				self.W2+= (self.momenRate * v2_prev + (1 + self.momenRate) )  * v2
-				self.W1 += ( self.momenRate * v1_prev + (1 + self.momenRate) )  * v1 
-
- 
+			self.W2+= ( v2 *self.momenRate) + (self.hidout.T.dot(out_delta) * self.learn_rate)       # velocity update
+			self.W1 += ( v1 *self.momenRate) + (input_vec.T.dot(hid_delta) * self.learn_rate)   
+			self.B2+= ( b2 *self.momenRate) + (-1 * self.learn_rate * out_delta)       # velocity update
+			self.B1 += ( b1 *self.momenRate) + (-1 * self.learn_rate * hid_delta)   
+  
 			
  
-	def TestNetwork(self, Data, testSize, erTolerance):
+	def TestNetwork(self, Data,  erTolerance):
 		Input = np.zeros((1, self.Top[0])) # temp hold input
 		Desired = np.zeros((1, self.Top[2])) 
 		nOutput = np.zeros((1, self.Top[2]))
+		testSize = Data.shape[0]
 		clasPerf = 0
 		sse = 0  
 		self.W1 = self.BestW1
@@ -145,7 +131,7 @@ class Network:
 			if(np.isclose(self.out, Desired, atol=erTolerance).any()):
 				clasPerf =  clasPerf +1  
 
-		return ( sse/testSize, float(clasPerf)/testSize * 100 )
+		return ( np.sqrt(sse/testSize), float(clasPerf)/testSize * 100 )
 
 
 
@@ -154,9 +140,11 @@ class Network:
 		self.BestW1 = self.W1
 		self.BestW2 = self.W2
 		self.BestB1 = self.B1
-		self.BestB2 = self.B2  
+		self.BestB2 = self.B2 
 
-	def BP_GD(self):  
+		#print (self.BestW1, self.BestW2, self.BestB1, self.BestB2)
+
+	def BP_GD(self, trainTolerance):  
 
 
 		Input = np.zeros((1, self.Top[0])) # temp hold input
@@ -166,7 +154,7 @@ class Network:
 
 		Er = [] 
 		epoch = 0
-		bestmse = 10000 # assign a large number in begining to maintain best (lowest RMSE)
+		bestRMSE= 10000 # assign a large number in begining to maintain best (lowest RMSE)
 		bestTrain = 0
 		while  epoch < self.Max and bestTrain < self.minPerf :
 			sse = 0
@@ -178,32 +166,37 @@ class Network:
 					pat = random.randint(0, len(self.TrainData)-1) # construst a mini-batch for SGD
 					array.append(train_dat[pat])		   	
 				train_dat = np.asarray(array)
+				num_batch = 10 # because your batch size is 10 %, you need 10 batches to cover full data approximately
 			else:
 				train_dat = self.TrainData
+				num_batch = 1
 
 			#print(train_dat)
 
-			for s in range(0, train_dat.shape[0]):
-		
-				Input[:]  =  train_dat[s,0:self.Top[0]]  
-				Desired[:]  = train_dat[s,self.Top[0]:]  
+			for batch in range(0, num_batch): # 10 mini batches in case of SGD. 1 major batch in case of GD
 
-				self.ForwardPass(Input)  
-				self.BackwardPass(Input ,Desired)
-				sse = sse+ self.sampleEr(Desired)
+				for s in range(0, train_dat.shape[0]):
+			
+					Input[:]  =  train_dat[s,0:self.Top[0]]  
+					Desired[:]  = train_dat[s,self.Top[0]:]  
+
+					self.ForwardPass(Input)  
+					self.BackwardPass(Input ,Desired)
+					sse = sse+ self.sampleEr(Desired)
 			 
-			mse = np.sqrt(sse/self.TrainData.shape[0]*self.Top[2])
+			rmse = np.sqrt(sse/self.TrainData.shape[0]*self.Top[2])
 
-			if mse < bestmse:
-				 bestmse = mse
+			if rmse < bestRMSE:
+				 bestRMSE = rmse
 				 self.saveKnowledge() 
-				 (x,bestTrain) = self.TestNetwork(self.TrainData, self.TrainData.shape[0], 0.2)
+				 (bestRMSE,bestTrain) = self.TestNetwork(self.TrainData,   trainTolerance)
+				 print(bestRMSE, bestTrain)
 
-			Er = np.append(Er, mse)
+			Er = np.append(Er, rmse)
 			
 			epoch=epoch+1  
 
-		return (Er,bestmse, bestTrain, epoch) 
+		return (Er,bestRMSE, bestTrain, epoch) 
 
 
 
@@ -216,7 +209,7 @@ def normalisedata(data, inputsize, outsize): # normalise the data between [0,1]
 def main(): 
 					
 		
-	problem = 1 # [1,2,3] choose your problem (Iris classfication or 4-bit parity or XOR gate)
+	problem = 1 # [1,2,3] choose your problem  
 				
 
 	if problem == 1:
@@ -225,88 +218,105 @@ def main():
 		Hidden = 6
 		Input = 4
 		Output = 2 #https://stats.stackexchange.com/questions/207049/neural-network-for-binary-classification-use-1-or-2-output-neurons
-		TrSamples =  TrDat.shape[0]
-		TestSize = TesDat.shape[0]
-		learnRate = 0.1  
+	 
 		TrainData  = normalisedata(TrDat, Input, Output) 
 		TestData  = normalisedata(TesDat, Input, Output)
 		MaxTime = 1000
+		MinCriteria = 95 #stop when learn 95 percent
 
 
 		 
 
-	elif problem == 2:
-		TrainData = np.loadtxt("data/4bit.csv", delimiter=',') #  4-bit parity problem
-		TestData = np.loadtxt("data/4bit.csv", delimiter=',') #  
-		Hidden = 4
-		Input = 4
-		Output = 1 #  https://stats.stackexchange.com/questions/207049/neural-network-for-binary-classification-use-1-or-2-output-neurons
-		TrSamples =  TrainData.shape[0]
-		TestSize = TestData.shape[0]
-		learnRate = 0.9  
-		MaxTime = 10000
+	elif problem == 2:  
 
-	elif problem == 3:
-		TrainData = np.loadtxt("data/xor.csv", delimiter=',') #  XOR  problem
-		TestData = np.loadtxt("data/xor.csv", delimiter=',') #  
-		Hidden = 3
-		Input = 2
-		Output = 2  # one hot encoding: https://machinelearningmastery.com/how-to-one-hot-encode-sequence-data-in-python/
-		TrSamples =  TrainData.shape[0]
-		TestSize = TestData.shape[0]
-		learnRate = 0.9  
-		MaxTime = 500 
 
-	#print(TrainData)
+		import sklearn  
+		from sklearn import datasets 
+		from sklearn.model_selection import train_test_split 
+		import pandas as pd
 
-	# todo: softmax: https://stats.stackexchange.com/questions/207049/neural-network-for-binary-classification-use-1-or-2-output-neurons
+		df = pd.read_csv('data/diabetes.csv') #https://www.kaggle.com/uciml/pima-indians-diabetes-database/data?select=diabetes.csv
+		#print(df.shape)
+		print(df.describe().transpose())
+		#https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.transpose.html
+
+		target_column = ['Outcome'] 
+		predictors = list(set(list(df.columns))-set(target_column))
+		df[predictors] = df[predictors]/df[predictors].max() 
+		#https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.describe.html
+
+
+
+
+
+		X = df[predictors].values
+		y = df[target_column].values
+ 
+		#https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
+		X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30, random_state=40)
+		print(X_train.shape); print(X_test.shape)
+
+		TrainData = np.hstack((X_train,y_train))
+		TestData = np.hstack((X_test,y_test))
+
+ 
+		Hidden = 20
+		Input = 8
+		Output = 1  
+
+		MaxTime = 5000
+		MinCriteria = 95 #stop when learn 95 percent 
 
 
 	Topo = [Input, Hidden, Output] 
 	MaxRun = 5 # number of experimental runs 
 	 
-	MinCriteria = 95 #stop when learn 95 percent
 
-	trainTolerance = 0.2 # [eg 0.15 would be seen as 0] [ 0.81 would be seen as 1]
+	trainTolerance = 0.25 # [eg 0.15 would be seen as 0] [ 0.81 would be seen as 1]
 	testTolerance = 0.49
 
-	useStocasticGD = True # False for vanilla BP. True for Stocastic BP
-	useVanilla = True # True for Vanilla Gradient Descent, False for Gradient Descent with momentum (either regular momentum or nesterov momen) 
-	useNestmomen = True # False for regular momentum, True for Nesterov momentum
+	learnRate = 0.1  
 
-	momentum_rate = 0.2
+	useStocastic = True # False for vanilla BP. True for Stocastic BP
+	updateStyle = True # True for Vanilla (Canonical) Gradient Descent, False for Gradient Descent with momentum  
+
+	momentum_rate = 0.001 # 0.1 ends up having very large weights. you can try and see
 	 
 
 
 	trainPerf = np.zeros(MaxRun)
 	testPerf =  np.zeros(MaxRun)
 
-	trainMSE =  np.zeros(MaxRun)
-	testMSE =  np.zeros(MaxRun)
+	trainRMSE =  np.zeros(MaxRun)
+	testRMSE =  np.zeros(MaxRun)
 	Epochs =  np.zeros(MaxRun)
 	Time =  np.zeros(MaxRun)
 
 	for run in range(0, MaxRun  ):
 		print(run, ' is experimental run') 
 
-		fnn = Network(Topo, TrainData, TestData, MaxTime, TrSamples, MinCriteria, learnRate, useStocasticGD, useVanilla, useNestmomen, momentum_rate)
+		fnn = Network(Topo, TrainData, TestData, MaxTime,   MinCriteria, learnRate, useStocastic, updateStyle, momentum_rate)
 		start_time=time.time()
-		(erEp,  trainMSE[run] , trainPerf[run] , Epochs[run]) = fnn.BP_GD()   
+		(erEp,  trainRMSE[run] , trainPerf[run] , Epochs[run]) = fnn.BP_GD(trainTolerance)   
+
 
 		Time[run]  =time.time()-start_time
-		(testMSE[run], testPerf[run]) = fnn.TestNetwork(TestData, TestSize, testTolerance)
-	print(' print classification performance for each experimental run') 
+		(testRMSE[run], testPerf[run]) = fnn.TestNetwork(TestData,  testTolerance)
+		print(trainMSE[run] , trainPerf[run], testMSE[run], testPerf[run])
+
+
+
+	print('classification performance for each experimental run') 
 	print(trainPerf)
 	print(testPerf)
-	print(' print RMSE performance for each experimental run') 
-	print(trainMSE)
-	print(testMSE)
-	print(' print Epocs and Time taken for each experimental run') 
+	print('RMSE performance for each experimental run') 
+	print(trainRMSE)
+	print(testRMSE)
+	print('Epocs and Time taken for each experimental run') 
 	print(Epochs)
 	print(Time)
-	print(' print mean and std of training performance') 
+	print('mean and std of classification performance') 
 	
-
 	print(np.mean(trainPerf), np.std(trainPerf))
 	print(np.mean(testPerf), np.std(testPerf))
 
@@ -314,7 +324,7 @@ def main():
 	
 	print(np.mean(Time), np.std(Time))
 	
-	
+	# fig of last run
 				 
 	plt.figure()
 	plt.plot(erEp )
